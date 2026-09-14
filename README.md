@@ -1,7 +1,8 @@
 # Jobia
 
-A small internal referral network: recruiters post jobs, employees refer
-candidates, and an LLM produces a quick fit assessment for each referral.
+A small internal referral network: recruiters post jobs, employees invite
+candidates to apply, candidates sign up and submit their own application,
+and an LLM produces a quick fit assessment for each application.
 
 Stack: Vite + React + TypeScript + Tailwind CSS + Supabase (Postgres, Auth,
 Storage, Edge Functions).
@@ -10,13 +11,14 @@ Storage, Edge Functions).
 
 | Area | Implementation |
 | --- | --- |
-| Auth | Real Supabase Auth (email + password). `AuthScreen.tsx` handles signup (creates a `profiles` row) and login. `useAuth.ts` tracks the session and loads the current user's profile. `Header.tsx` shows the logged-in user and a sign-out button. |
+| Auth | Real Supabase Auth (email + password). `AuthScreen.tsx` handles recruiter/referrer signup (creates a `profiles` row) and login. `useAuth.ts` tracks the session and loads the current user's profile. `Header.tsx` shows the logged-in user and a sign-out button. |
 | Profiles | `profiles` table in Supabase, created on signup. |
-| Jobs | `jobs` table in Supabase. `App.tsx` fetches on mount; `JobsBoard.tsx` inserts new jobs (recruiters only, enforced by RLS). |
-| Referrals | `referrals` table in Supabase. `ReferralForm.tsx` inserts a referral row on submit. |
-| Resume upload | If a resume file is attached, `ReferralForm.tsx` uploads it to the private `resumes` Storage bucket under `{referral_id}/{filename}` and stores the path on the referral row. |
-| Match scoring | The `match-referral` Supabase Edge Function (`supabase/functions/match-referral`) loads the referral + job with the service role key and writes `match_summary` / `match_score_label` back onto the referral. **Demo mode:** it currently returns a mocked assessment instead of calling an LLM, so the demo doesn't depend on any AI API key — the draft prompt for a real Anthropic-backed version is kept commented out in the function for later. `ReferralForm.tsx` calls `supabase.functions.invoke('match-referral', ...)` right after inserting the referral (and after any resume upload), and shows the returned summary exactly as it would for a real result. |
-| Recruiter dashboard | `RecruiterDashboard.tsx` fetches the current recruiter's jobs and their referrals directly from Supabase. |
+| Jobs | `jobs` table in Supabase, including required skills. `App.tsx` fetches on mount; `JobsBoard.tsx` inserts new jobs (recruiters only, enforced by RLS). |
+| Invites | A logged-in user invites a candidate from `InviteForm.tsx` (name + email only) — this inserts a `referrals` row with `status='invited'`. **Demo mode:** no real email is sent; the UI shows a copyable invite link (`?ref=<referral id>`) that stands in for what a real email would deliver. |
+| Candidate signup + apply | Opening an invite link routes an unauthenticated visitor through `CandidateSignup.tsx` (name + password only, email locked to the invite) via the public `get-invite` Edge Function, then straight into `ApplyForm.tsx` for that job. Submitting claims the referral row (`candidate_id`, `status='submitted'`), enforced by a scoped RLS UPDATE policy. |
+| Resume upload + parsing | In `ApplyForm.tsx`, selecting a résumé runs a **mocked** parse (`mockResumeParse.ts`, simulated delay) that pre-fills the summary field — no real parsing/LLM call happens client-side. On submit, the file uploads to the private `resumes` Storage bucket under `{referral_id}/{filename}`. |
+| Match scoring | The `match-referral` Supabase Edge Function (`supabase/functions/match-referral`) loads the referral + job with the service role key and writes `match_summary` / `match_score_label` back onto the referral. **Demo mode:** it currently returns a mocked assessment instead of calling an LLM, so the demo doesn't depend on any AI API key — the draft prompt for a real Anthropic-backed version is kept commented out in the function for later. `ApplyForm.tsx` calls `supabase.functions.invoke('match-referral', ...)` right after submitting the application, and shows the returned summary. |
+| Recruiter dashboard | `RecruiterDashboard.tsx` fetches the current recruiter's jobs and their referrals directly from Supabase, showing an "Invited" badge for referrals still awaiting the candidate's application. |
 
 See [`schema.sql`](schema.sql) for the full schema (`profiles`, `jobs`,
 `referrals`, RLS policies, and the `resumes` Storage bucket).
@@ -42,21 +44,32 @@ supabase db push
 
 ...or paste the contents of [`schema.sql`](schema.sql) into the Supabase SQL
 editor and run it. This creates the `profiles`, `jobs`, and `referrals`
-tables (with RLS policies) and the private `resumes` Storage bucket.
+tables (with RLS policies) and the private `resumes` Storage bucket. If
+`jobs`/`referrals` already exist from an earlier version of this schema,
+the migration blocks near the end of the file (`add column if not exists`,
+new/replaced policies) bring them up to date in place — safe to run on a
+fresh project too.
 
-### 3. Deploy the match-referral Edge Function
+### 3. Deploy the Edge Functions
 
 ```bash
 supabase functions deploy match-referral
+supabase functions deploy get-invite --no-verify-jwt
 ```
 
 `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are provided automatically to
-Edge Functions by Supabase. This function currently runs in **demo mode**
-and returns a mocked fit assessment — no `ANTHROPIC_API_KEY` is required.
-To switch it to a real Anthropic-backed assessment later, see the commented
--out draft prompt and Anthropic call inside
-`supabase/functions/match-referral/index.ts`, then run
-`supabase secrets set ANTHROPIC_API_KEY=sk-ant-...`.
+Edge Functions by Supabase.
+
+- `match-referral` currently runs in **demo mode** and returns a mocked fit
+  assessment — no `ANTHROPIC_API_KEY` is required. To switch it to a real
+  Anthropic-backed assessment later, see the commented-out draft prompt and
+  Anthropic call inside `supabase/functions/match-referral/index.ts`, then
+  run `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...`.
+- `get-invite` must be deployed with `--no-verify-jwt` — it's the one
+  endpoint unauthenticated visitors call (from an invite link, before they
+  have an account) to see which job they're invited to. It only ever
+  returns a still-`invited` referral's job title/company and the
+  candidate's own name/email — never the full row.
 
 ### 4. Run the app
 
@@ -71,3 +84,6 @@ npm run dev
   what — the app relies on them rather than duplicating checks client-side.
 - The `resumes` Storage bucket is private; only authenticated users can
   upload/read.
+- The invite link flow uses `sessionStorage` (see `src/lib/invite.ts`) to
+  carry the pending referral id across the signup redirect, since the
+  `?ref=` query param is stripped from the URL as soon as it's read.

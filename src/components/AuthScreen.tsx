@@ -5,7 +5,11 @@ import { errorMessage } from "../lib/errorMessage";
 
 type Mode = "login" | "signup";
 
-export default function AuthScreen() {
+interface AuthScreenProps {
+  onSignedUp: () => void | Promise<void>;
+}
+
+export default function AuthScreen({ onSignedUp }: AuthScreenProps) {
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -62,6 +66,8 @@ export default function AuthScreen() {
             is_recruiter: isRecruiter,
           });
         if (profileError) throw profileError;
+
+        await onSignedUp();
       }
     } catch (err) {
       setError(errorMessage(err));

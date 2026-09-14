@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { errorMessage } from "../lib/errorMessage";
 import type { Job, MatchScoreLabel, Profile, Referral } from "../lib/types";
 
 interface RecruiterDashboardProps {
@@ -20,6 +21,8 @@ export default function RecruiterDashboard({
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [resumeLoadingId, setResumeLoadingId] = useState<string | null>(null);
+  const [resumeError, setResumeError] = useState<string | null>(null);
 
   const myJobs = jobs.filter((j) => j.recruiter_id === currentProfile.id);
   const myJobIds = myJobs.map((j) => j.id);
@@ -55,6 +58,26 @@ export default function RecruiterDashboard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myJobIds.join(",")]);
 
+  async function handleViewResume(referral: Referral) {
+    if (!referral.resume_url) return;
+
+    setResumeError(null);
+    setResumeLoadingId(referral.id);
+
+    const { data, error } = await supabase.storage
+      .from("resumes")
+      .createSignedUrl(referral.resume_url, 60);
+
+    setResumeLoadingId(null);
+
+    if (error || !data) {
+      setResumeError(errorMessage(error) || "Failed to load résumé link.");
+      return;
+    }
+
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <h1 className="mb-6 text-2xl font-semibold text-slate-900">
@@ -62,6 +85,9 @@ export default function RecruiterDashboard({
       </h1>
 
       {error && <p className="mb-4 text-sm text-rose-600">{error}</p>}
+      {resumeError && (
+        <p className="mb-4 text-sm text-rose-600">{resumeError}</p>
+      )}
 
       {myJobs.length === 0 && (
         <p className="text-sm text-slate-500">
@@ -101,15 +127,22 @@ export default function RecruiterDashboard({
                         <span className="font-medium text-slate-900">
                           {referral.candidate_name}
                         </span>
-                        {referral.match_score_label && (
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-medium ${
-                              scoreStyles[referral.match_score_label]
-                            }`}
-                          >
-                            {referral.match_score_label}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {referral.status === "invited" && (
+                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                              Invited
+                            </span>
+                          )}
+                          {referral.match_score_label && (
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-medium ${
+                                scoreStyles[referral.match_score_label]
+                              }`}
+                            >
+                              {referral.match_score_label}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <p className="text-sm text-slate-500">
                         {referral.candidate_email}
@@ -123,6 +156,17 @@ export default function RecruiterDashboard({
                         <p className="mt-2 text-sm italic text-slate-500">
                           {referral.match_summary}
                         </p>
+                      )}
+                      {referral.resume_url && (
+                        <button
+                          onClick={() => handleViewResume(referral)}
+                          disabled={resumeLoadingId === referral.id}
+                          className="mt-2 text-sm font-medium text-indigo-600 hover:underline disabled:opacity-50"
+                        >
+                          {resumeLoadingId === referral.id
+                            ? "Loading résumé…"
+                            : "View résumé"}
+                        </button>
                       )}
                     </div>
                   ))}

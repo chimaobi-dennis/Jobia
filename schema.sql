@@ -44,6 +44,7 @@ create table if not exists public.jobs (
   company text not null,
   description text not null,
   location text,
+  skills text[] not null default '{}',
   created_at timestamptz not null default now()
 );
 
@@ -78,16 +79,21 @@ create policy "Recruiters can delete their own jobs"
 
 -- ---------------------------------------------------------------------
 -- referrals
--- Submitted by any authenticated user (the referrer) against a job.
--- match_summary / match_score_label are filled in asynchronously by the
--- match-referral Edge Function after the row is inserted.
+-- Created by a referrer as an *invite* (candidate_name + candidate_email
+-- only, status='invited'). The invited candidate later signs up, follows
+-- the invite link, and *claims + submits* the same row themselves (adding
+-- summary, resume_url, candidate_id, status='submitted'). match_summary /
+-- match_score_label are filled in asynchronously by the match-referral
+-- Edge Function after submission.
 -- ---------------------------------------------------------------------
 create table if not exists public.referrals (
   id uuid primary key default gen_random_uuid(),
   job_id uuid not null references public.jobs (id) on delete cascade,
   referrer_id uuid not null references public.profiles (id) on delete cascade,
+  candidate_id uuid references public.profiles (id) on delete set null,
   candidate_name text not null,
   candidate_email text not null,
+  status text not null default 'invited' check (status in ('invited', 'submitted')),
   summary text,
   resume_url text,
   match_summary text,
@@ -112,14 +118,34 @@ create policy "Recruiters can view referrals for their own jobs"
     )
   );
 
+create policy "Candidates can view referrals naming their own email"
+  on public.referrals for select
+  to authenticated
+  using (lower(candidate_email) = lower((auth.jwt() ->> 'email')));
+
 create policy "Authenticated users can submit referrals"
   on public.referrals for insert
   to authenticated
   with check (auth.uid() = referrer_id);
 
--- Note: no update policy for regular users — match_summary/match_score_label
--- are written by the match-referral Edge Function using the service role
--- key, which bypasses RLS entirely.
+-- An invited candidate can claim and submit their own invite once: only
+-- while status is still 'invited', only a row addressed to their own auth
+-- email, and only to move it to 'submitted' as themselves. This is the one
+-- update path regular users have on this table — match_summary /
+-- match_score_label are written separately by the match-referral Edge
+-- Function using the service role key, which bypasses RLS entirely.
+create policy "Invited candidates can claim and submit their referral"
+  on public.referrals for update
+  to authenticated
+  using (
+    status = 'invited'
+    and lower(candidate_email) = lower((auth.jwt() ->> 'email'))
+  )
+  with check (
+    status = 'submitted'
+    and candidate_id = auth.uid()
+    and lower(candidate_email) = lower((auth.jwt() ->> 'email'))
+  );
 
 -- ---------------------------------------------------------------------
 -- Storage: resumes bucket
@@ -138,3 +164,56 @@ create policy "Authenticated users can read resumes"
   on storage.objects for select
   to authenticated
   using (bucket_id = 'resumes');
+
+-- ---------------------------------------------------------------------
+-- Migration: add jobs.skills to an already-existing jobs table.
+-- `create table if not exists` above won't add this column to a table
+-- that was created before this line was added — run this separately
+-- against any project that already had `jobs` before `skills` existed.
+-- Safe to run even on a fresh project (IF NOT EXISTS).
+-- ---------------------------------------------------------------------
+alter table public.jobs
+  add column if not exists skills text[] not null default '{}';
+
+-- ---------------------------------------------------------------------
+-- Migration: candidate self-apply flow on an already-existing referrals
+-- table. Adds candidate_id/status and the two new RLS policies. Existing
+-- rows (created under the old referrer-fills-everything flow) default to
+-- status='submitted' so they don't get swept up by the "invited" policies.
+-- Safe to run even on a fresh project.
+-- ---------------------------------------------------------------------
+alter table public.referrals
+  add column if not exists candidate_id uuid references public.profiles (id) on delete set null;
+
+alter table public.referrals
+  add column if not exists status text not null default 'submitted';
+
+update public.referrals set status = 'submitted' where status is null;
+
+alter table public.referrals
+  drop constraint if exists referrals_status_check;
+alter table public.referrals
+  add constraint referrals_status_check check (status in ('invited', 'submitted'));
+
+alter table public.referrals
+  alter column summary drop not null;
+
+drop policy if exists "Candidates can view referrals naming their own email" on public.referrals;
+create policy "Candidates can view referrals naming their own email"
+  on public.referrals for select
+  to authenticated
+  using (lower(candidate_email) = lower((auth.jwt() ->> 'email')));
+
+drop policy if exists "Invited candidates can claim and submit their referral" on public.referrals;
+create policy "Invited candidates can claim and submit their referral"
+  on public.referrals for update
+  to authenticated
+  using (
+    status = 'invited'
+    and lower(candidate_email) = lower((auth.jwt() ->> 'email'))
+  )
+  with check (
+    status = 'submitted'
+    and candidate_id = auth.uid()
+    and lower(candidate_email) = lower((auth.jwt() ->> 'email'))
+  );
