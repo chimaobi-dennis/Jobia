@@ -1,9 +1,10 @@
+import { useEffect, useState } from "react";
+import { supabase } from "../lib/supabaseClient";
 import type { Job, MatchScoreLabel, Profile, Referral } from "../lib/types";
 
 interface RecruiterDashboardProps {
   currentProfile: Profile;
   jobs: Job[];
-  referrals: Referral[];
 }
 
 const scoreStyles: Record<MatchScoreLabel, string> = {
@@ -15,11 +16,44 @@ const scoreStyles: Record<MatchScoreLabel, string> = {
 export default function RecruiterDashboard({
   currentProfile,
   jobs,
-  referrals,
 }: RecruiterDashboardProps) {
+  const [referrals, setReferrals] = useState<Referral[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const myJobs = jobs.filter((j) => j.recruiter_id === currentProfile.id);
-  const myJobIds = new Set(myJobs.map((j) => j.id));
-  const myReferrals = referrals.filter((r) => myJobIds.has(r.job_id));
+  const myJobIds = myJobs.map((j) => j.id);
+
+  useEffect(() => {
+    if (myJobIds.length === 0) {
+      setReferrals([]);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+
+    supabase
+      .from("referrals")
+      .select("*")
+      .in("job_id", myJobIds)
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          setError(error.message);
+        } else {
+          setReferrals(data as Referral[]);
+        }
+        setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myJobIds.join(",")]);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
@@ -27,15 +61,21 @@ export default function RecruiterDashboard({
         Recruiter Dashboard
       </h1>
 
+      {error && <p className="mb-4 text-sm text-rose-600">{error}</p>}
+
       {myJobs.length === 0 && (
         <p className="text-sm text-slate-500">
           You haven't posted any jobs yet.
         </p>
       )}
 
+      {loading && myJobs.length > 0 && (
+        <p className="text-sm text-slate-500">Loading referrals…</p>
+      )}
+
       <div className="grid gap-6">
         {myJobs.map((job) => {
-          const jobReferrals = myReferrals.filter((r) => r.job_id === job.id);
+          const jobReferrals = referrals.filter((r) => r.job_id === job.id);
           return (
             <div
               key={job.id}
@@ -46,7 +86,7 @@ export default function RecruiterDashboard({
               </h2>
               <p className="text-sm text-slate-500">{job.company}</p>
 
-              {jobReferrals.length === 0 ? (
+              {!loading && jobReferrals.length === 0 ? (
                 <p className="mt-3 text-sm text-slate-500">
                   No referrals yet.
                 </p>

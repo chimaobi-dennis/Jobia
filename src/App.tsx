@@ -1,107 +1,164 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import AuthScreen from "./components/AuthScreen";
 import Header from "./components/Header";
 import JobsBoard from "./components/JobsBoard";
 import ReferralForm from "./components/ReferralForm";
 import RecruiterDashboard from "./components/RecruiterDashboard";
-import { mockJobs, mockProfiles, mockReferrals } from "./lib/mockData";
-import type { Job, Referral } from "./lib/types";
+import { supabase, supabaseConfigError } from "./lib/supabaseClient";
+import { useAuth } from "./lib/useAuth";
+import type { Job } from "./lib/types";
 
 type View = "jobs" | "dashboard";
 
 export default function App() {
-  const [currentProfileId, setCurrentProfileId] = useState(
-    mockProfiles[0].id,
-  );
+  const { session, profile, profileError, loading, signOut } = useAuth();
   const [view, setView] = useState<View>("jobs");
-  const [jobs, setJobs] = useState<Job[]>(mockJobs);
-  const [referrals, setReferrals] = useState<Referral[]>(mockReferrals);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(true);
+  const [jobsError, setJobsError] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
-  const currentProfile = mockProfiles.find((p) => p.id === currentProfileId)!;
-  const selectedJob = jobs.find((j) => j.id === selectedJobId) ?? null;
+  useEffect(() => {
+    if (!session) return;
 
-  function handleCreateJob(input: {
+    let cancelled = false;
+    setJobsLoading(true);
+
+    supabase
+      .from("jobs")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          setJobsError(error.message);
+        } else {
+          setJobs(data as Job[]);
+        }
+        setJobsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  async function handleCreateJob(input: {
     title: string;
     company: string;
     description: string;
     location: string;
   }) {
-    const newJob: Job = {
-      id: crypto.randomUUID(),
-      recruiter_id: currentProfile.id,
-      title: input.title,
-      company: input.company,
-      description: input.description,
-      location: input.location || null,
-      created_at: new Date().toISOString(),
-    };
-    setJobs((prev) => [newJob, ...prev]);
+    if (!profile) return;
+
+    const { data, error } = await supabase
+      .from("jobs")
+      .insert({
+        recruiter_id: profile.id,
+        title: input.title,
+        company: input.company,
+        description: input.description,
+        location: input.location || null,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      setJobsError(error.message);
+      return;
+    }
+
+    setJobs((prev) => [data as Job, ...prev]);
   }
 
-  function handleReferralSubmitted(input: {
-    job_id: string;
-    referrer_id: string;
-    candidate_name: string;
-    candidate_email: string;
-    summary: string;
-    resume_url: string | null;
-  }) {
-    const newReferral: Referral = {
-      id: crypto.randomUUID(),
-      job_id: input.job_id,
-      referrer_id: input.referrer_id,
-      candidate_name: input.candidate_name,
-      candidate_email: input.candidate_email,
-      summary: input.summary,
-      resume_url: input.resume_url,
-      match_summary: null,
-      match_score_label: null,
-      created_at: new Date().toISOString(),
-    };
-    setReferrals((prev) => [newReferral, ...prev]);
+  const selectedJob = jobs.find((j) => j.id === selectedJobId) ?? null;
+
+  if (supabaseConfigError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+        <div className="max-w-md rounded-lg border border-rose-200 bg-rose-50 p-6">
+          <h1 className="text-lg font-semibold text-rose-900">
+            Configuration error
+          </h1>
+          <p className="mt-2 text-sm text-rose-800">{supabaseConfigError}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <p className="text-sm text-slate-500">Loading…</p>
+      </div>
+    );
+  }
+
+  if (session && profileError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+        <div className="max-w-md rounded-lg border border-rose-200 bg-rose-50 p-6">
+          <h1 className="text-lg font-semibold text-rose-900">
+            Profile error
+          </h1>
+          <p className="mt-2 text-sm text-rose-800">{profileError}</p>
+          <button
+            onClick={signOut}
+            className="mt-4 rounded-md border border-rose-300 px-3 py-1 text-sm text-rose-800 hover:bg-rose-100"
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session || !profile) {
+    return <AuthScreen />;
   }
 
   return (
     <div className="min-h-screen bg-slate-50">
       <Header
-        currentProfileId={currentProfileId}
-        onChangeProfile={(id) => {
-          setCurrentProfileId(id);
-          setView("jobs");
-          setSelectedJobId(null);
-        }}
+        profile={profile}
+        onSignOut={signOut}
         view={view}
         onChangeView={setView}
       />
 
+      {jobsError && (
+        <p className="mx-auto max-w-5xl px-4 pt-4 text-sm text-rose-600">
+          {jobsError}
+        </p>
+      )}
+
       {view === "jobs" ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 lg:gap-6 mx-auto max-w-5xl">
-          <div className="lg:col-span-3">
+        <div className="mx-auto max-w-5xl">
+          {jobsLoading ? (
+            <p className="px-4 py-8 text-sm text-slate-500">
+              Loading jobs…
+            </p>
+          ) : (
             <JobsBoard
               jobs={jobs}
-              currentProfile={currentProfile}
+              currentProfile={profile}
               onCreateJob={handleCreateJob}
               onSelectJob={setSelectedJobId}
               selectedJobId={selectedJobId}
             />
-          </div>
+          )}
           {selectedJob && (
-            <div className="px-4 pb-8 lg:col-span-3">
+            <div className="px-4 pb-8">
               <ReferralForm
                 key={selectedJob.id}
                 job={selectedJob}
-                currentProfile={currentProfile}
-                onSubmitted={handleReferralSubmitted}
+                currentProfile={profile}
               />
             </div>
           )}
         </div>
       ) : (
-        <RecruiterDashboard
-          currentProfile={currentProfile}
-          jobs={jobs}
-          referrals={referrals}
-        />
+        <RecruiterDashboard currentProfile={profile} jobs={jobs} />
       )}
     </div>
   );

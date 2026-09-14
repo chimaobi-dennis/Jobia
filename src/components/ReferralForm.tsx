@@ -1,19 +1,12 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { supabase } from "../lib/supabaseClient";
+import { errorMessage } from "../lib/errorMessage";
 import type { Job, MatchScoreLabel, Profile } from "../lib/types";
-import { mockMatchReferral } from "../lib/matchService";
 
 interface ReferralFormProps {
   job: Job;
   currentProfile: Profile;
-  onSubmitted: (referral: {
-    job_id: string;
-    referrer_id: string;
-    candidate_name: string;
-    candidate_email: string;
-    summary: string;
-    resume_url: string | null;
-  }) => void;
 }
 
 const scoreStyles: Record<MatchScoreLabel, string> = {
@@ -22,16 +15,13 @@ const scoreStyles: Record<MatchScoreLabel, string> = {
   "Weak fit": "bg-rose-100 text-rose-800",
 };
 
-export default function ReferralForm({
-  job,
-  currentProfile,
-  onSubmitted,
-}: ReferralFormProps) {
+export default function ReferralForm({ job, currentProfile }: ReferralFormProps) {
   const [candidateName, setCandidateName] = useState("");
   const [candidateEmail, setCandidateEmail] = useState("");
   const [summary, setSummary] = useState("");
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [matching, setMatching] = useState(false);
   const [matchResult, setMatchResult] = useState<{
     summary: string;
@@ -44,27 +34,63 @@ export default function ReferralForm({
     if (!candidateName.trim() || !candidateEmail.trim()) return;
 
     setSubmitting(true);
-    try {
-      // Mock: no real upload yet. Real implementation uploads resumeFile to
-      // the `resumes` Storage bucket under `{referral_id}/{filename}` before
-      // inserting the referral row.
-      const resumeUrl = resumeFile ? `mock://resumes/${resumeFile.name}` : null;
+    setSubmitError(null);
 
-      onSubmitted({
-        job_id: job.id,
-        referrer_id: currentProfile.id,
-        candidate_name: candidateName,
-        candidate_email: candidateEmail,
-        summary,
-        resume_url: resumeUrl,
-      });
+    try {
+      const { data: referral, error: insertError } = await supabase
+        .from("referrals")
+        .insert({
+          job_id: job.id,
+          referrer_id: currentProfile.id,
+          candidate_name: candidateName,
+          candidate_email: candidateEmail,
+          summary,
+          resume_url: null,
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      let resumeUrl: string | null = null;
+      if (resumeFile) {
+        const path = `${referral.id}/${resumeFile.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from("resumes")
+          .upload(path, resumeFile);
+
+        if (uploadError) throw uploadError;
+
+        resumeUrl = path;
+        const { error: updateError } = await supabase
+          .from("referrals")
+          .update({ resume_url: resumeUrl })
+          .eq("id", referral.id);
+
+        if (updateError) throw updateError;
+      }
+
       setSubmitted(true);
+      setSubmitting(false);
 
       setMatching(true);
-      const result = await mockMatchReferral();
-      setMatchResult(result);
-    } finally {
+      const { data: matchData, error: matchError } =
+        await supabase.functions.invoke("match-referral", {
+          body: { referralId: referral.id },
+        });
+
+      if (matchError) {
+        console.error("Match evaluation failed", matchError);
+      } else if (matchData) {
+        setMatchResult({
+          summary: matchData.summary,
+          scoreLabel: matchData.scoreLabel,
+        });
+      }
+    } catch (err) {
+      setSubmitError(errorMessage(err));
       setSubmitting(false);
+    } finally {
       setMatching(false);
     }
   }
@@ -158,6 +184,11 @@ export default function ReferralForm({
           />
         </div>
       </div>
+
+      {submitError && (
+        <p className="mt-4 text-sm text-rose-600">{submitError}</p>
+      )}
+
       <button
         type="submit"
         disabled={submitting}

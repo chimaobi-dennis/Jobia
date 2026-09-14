@@ -1,29 +1,24 @@
 import type { Profile } from "../lib/types";
-import { mockProfiles } from "../lib/mockData";
 
 interface HeaderProps {
-  currentProfileId: string;
-  onChangeProfile: (profileId: string) => void;
+  profile: Profile;
+  onSignOut: () => void;
   view: "jobs" | "dashboard";
   onChangeView: (view: "jobs" | "dashboard") => void;
 }
 
 export default function Header({
-  currentProfileId,
-  onChangeProfile,
+  profile,
+  onSignOut,
   view,
   onChangeView,
 }: HeaderProps) {
-  const currentProfile = mockProfiles.find(
-    (p) => p.id === currentProfileId,
-  ) as Profile;
-
   return (
     <header className="border-b border-slate-200 bg-white">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
         <div className="flex items-center gap-8">
           <span className="text-lg font-semibold text-slate-900">
-            Referral Network
+            Jobia
           </span>
           <nav className="flex gap-4 text-sm font-medium">
             <button
@@ -36,7 +31,7 @@ export default function Header({
             >
               Jobs
             </button>
-            {currentProfile?.is_recruiter && (
+            {profile.is_recruiter && (
               <button
                 onClick={() => onChangeView("dashboard")}
                 className={
@@ -51,22 +46,17 @@ export default function Header({
           </nav>
         </div>
 
-        <div className="flex items-center gap-2 text-sm">
-          <label htmlFor="viewing-as" className="text-slate-500">
-            Viewing as
-          </label>
-          <select
-            id="viewing-as"
-            value={currentProfileId}
-            onChange={(e) => onChangeProfile(e.target.value)}
-            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-900"
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-slate-700">
+            {profile.name}
+            {profile.is_recruiter ? " (Recruiter)" : ""}
+          </span>
+          <button
+            onClick={onSignOut}
+            className="rounded-md border border-slate-300 px-3 py-1 text-slate-600 hover:bg-slate-50"
           >
-            {mockProfiles.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} {p.is_recruiter ? "(Recruiter)" : ""}
-              </option>
-            ))}
-          </select>
+            Sign out
+          </button>
         </div>
       </div>
     </header>

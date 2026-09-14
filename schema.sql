@@ -1,4 +1,4 @@
--- Referral Network MVP — Supabase schema
+-- Jobia — Supabase schema
 -- Run this against your linked Supabase project (via `supabase db push`
 -- with this file as a migration, or paste into the SQL editor).
 

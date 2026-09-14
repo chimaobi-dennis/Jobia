@@ -1,0 +1,4 @@
+project_id = "jobia"
+
+[functions.match-referral]
+verify_jwt = true
