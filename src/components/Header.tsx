@@ -1,10 +1,12 @@
 import type { Profile } from "../lib/types";
 
+type View = "jobs" | "dashboard" | "applications";
+
 interface HeaderProps {
   profile: Profile;
   onSignOut: () => void;
-  view: "jobs" | "dashboard";
-  onChangeView: (view: "jobs" | "dashboard") => void;
+  view: View;
+  onChangeView: (view: View) => void;
 }
 
 export default function Header({
@@ -30,6 +32,16 @@ export default function Header({
               }
             >
               Jobs
+            </button>
+            <button
+              onClick={() => onChangeView("applications")}
+              className={
+                view === "applications"
+                  ? "text-indigo-600"
+                  : "text-slate-500 hover:text-slate-900"
+              }
+            >
+              My Applications
             </button>
             {profile.is_recruiter && (
               <button

@@ -4,6 +4,7 @@ import AuthScreen from "./components/AuthScreen";
 import CandidateSignup from "./components/CandidateSignup";
 import Header from "./components/Header";
 import JobsBoard from "./components/JobsBoard";
+import MyApplications from "./components/MyApplications";
 import RecruiterDashboard from "./components/RecruiterDashboard";
 import { fetchInvitePreview } from "./lib/getInvite";
 import type { InvitePreview } from "./lib/getInvite";
@@ -19,7 +20,7 @@ import { useAuth } from "./lib/useAuth";
 import { errorMessage } from "./lib/errorMessage";
 import type { Job, Referral } from "./lib/types";
 
-type View = "jobs" | "dashboard";
+type View = "jobs" | "dashboard" | "applications";
 
 export default function App() {
   const { session, profile, profileError, loading, signOut, refreshProfile } =
@@ -41,6 +42,9 @@ export default function App() {
   const [applyJob, setApplyJob] = useState<Job | null>(null);
   const [applyReferral, setApplyReferral] = useState<Referral | null>(null);
   const [selfApplyError, setSelfApplyError] = useState<string | null>(null);
+
+  const [myApplications, setMyApplications] = useState<Referral[]>([]);
+  const [myApplicationsVersion, setMyApplicationsVersion] = useState(0);
 
   // Pick up ?ref=<referralId> on first load and persist it across the
   // signup redirect (sessionStorage survives the reload; the query param
@@ -167,6 +171,33 @@ export default function App() {
     };
   }, [session]);
 
+  // The current user's own submitted applications (as candidate), so
+  // MyApplications can list them and JobsBoard can flag jobs already
+  // applied to. RLS scopes "referrals" select access, including a
+  // policy for rows whose candidate_email matches the session's email.
+  useEffect(() => {
+    if (!session || !profile) return;
+
+    let cancelled = false;
+
+    supabase
+      .from("referrals")
+      .select("*")
+      .eq("candidate_id", profile.id)
+      .eq("status", "submitted")
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (!error && data) {
+          setMyApplications(data as Referral[]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session, profile, myApplicationsVersion]);
+
   async function handleCreateJob(input: {
     title: string;
     company: string;
@@ -203,6 +234,7 @@ export default function App() {
     setApplyJob(null);
     setApplyReferral(null);
     setInvitePreview(null);
+    setMyApplicationsVersion((v) => v + 1);
   }
 
   // A logged-in user applying directly to a job they're viewing (as
@@ -328,7 +360,7 @@ export default function App() {
         </p>
       )}
 
-      {view === "jobs" ? (
+      {view === "jobs" && (
         <div className="mx-auto max-w-5xl">
           {jobsLoading ? (
             <p className="px-4 py-8 text-sm text-slate-500">
@@ -343,11 +375,18 @@ export default function App() {
               selectedJobId={selectedJobId}
               onApply={handleApplyForJob}
               applyError={selfApplyError}
+              appliedJobIds={
+                new Set(myApplications.map((r) => r.job_id))
+              }
             />
           )}
         </div>
-      ) : (
+      )}
+      {view === "dashboard" && (
         <RecruiterDashboard currentProfile={profile} jobs={jobs} />
+      )}
+      {view === "applications" && (
+        <MyApplications applications={myApplications} jobs={jobs} />
       )}
     </div>
   );

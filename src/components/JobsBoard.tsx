@@ -17,6 +17,7 @@ interface JobsBoardProps {
   selectedJobId: string | null;
   onApply: (job: Job) => void;
   applyError: string | null;
+  appliedJobIds: Set<string>;
 }
 
 function parseSkills(input: string): string[] {
@@ -38,6 +39,7 @@ export default function JobsBoard({
   selectedJobId,
   onApply,
   applyError,
+  appliedJobIds,
 }: JobsBoardProps) {
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
@@ -207,7 +209,14 @@ export default function JobsBoard({
             <h2 className="text-lg font-semibold text-slate-900">
               {job.title}
             </h2>
-            <p className="text-sm text-slate-500">{job.location ?? "—"}</p>
+            <div className="flex items-center gap-3">
+              {appliedJobIds.has(job.id) && (
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800">
+                  Applied
+                </span>
+              )}
+              <p className="text-sm text-slate-500">{job.location ?? "—"}</p>
+            </div>
           </button>
         ))}
         {jobs.length === 0 && (
@@ -271,12 +280,18 @@ export default function JobsBoard({
 
             {!showInvite ? (
               <div className="mt-6 flex gap-3">
-                <button
-                  onClick={() => onApply(selectedJob)}
-                  className="flex-1 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-                >
-                  Apply for this job
-                </button>
+                {appliedJobIds.has(selectedJob.id) ? (
+                  <span className="flex flex-1 items-center justify-center gap-2 rounded-md bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700">
+                    ✓ You've applied
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => onApply(selectedJob)}
+                    className="flex-1 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+                  >
+                    Apply for this job
+                  </button>
+                )}
                 <button
                   onClick={() => setShowInvite(true)}
                   className="flex-1 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
