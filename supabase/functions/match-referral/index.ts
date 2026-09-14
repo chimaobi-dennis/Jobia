@@ -56,25 +56,58 @@ interface MatchResult {
 // });
 // -----------------------------------------------------------------------
 
+// Deterministic stand-in for a real LLM assessment: scores fit by how many
+// of the job's required skills show up in the candidate's own text (résumé
+// filename, summary, experience) — no LLM call, but it actually responds
+// to the data instead of picking a label at random.
 function mockMatchResult(
-  job: { title: string; company: string },
-  referral: { candidate_name: string; resume_url: string | null },
+  job: { title: string; company: string; skills: string[] },
+  referral: {
+    candidate_name: string;
+    summary: string | null;
+    candidate_experience: string | null;
+    resume_url: string | null;
+  },
 ): MatchResult {
-  const labels: MatchResult["scoreLabel"][] = [
-    "Strong fit",
-    "Partial fit",
-    "Weak fit",
-  ];
-  const scoreLabel = labels[Math.floor(Math.random() * labels.length)];
+  const candidateText = [
+    referral.summary ?? "",
+    referral.candidate_experience ?? "",
+    referral.resume_url ?? "",
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const matchedSkills = job.skills.filter((skill) =>
+    candidateText.includes(skill.toLowerCase()),
+  );
+
+  const overlapRatio =
+    job.skills.length > 0 ? matchedSkills.length / job.skills.length : 0.5;
+
+  let scoreLabel: MatchResult["scoreLabel"];
+  if (overlapRatio >= 0.6) {
+    scoreLabel = "Strong fit";
+  } else if (overlapRatio >= 0.25) {
+    scoreLabel = "Partial fit";
+  } else {
+    scoreLabel = "Weak fit";
+  }
 
   const resumeNote = referral.resume_url
     ? "Résumé on file was reviewed alongside the referrer's notes."
     : "No résumé was attached, so this is based on the referrer's notes alone.";
 
+  const skillsNote =
+    matchedSkills.length > 0
+      ? `Matched skills: ${matchedSkills.join(", ")}.`
+      : job.skills.length > 0
+        ? `None of the required skills (${job.skills.join(", ")}) were found in the application.`
+        : "This job has no listed required skills to match against.";
+
   const summaryByLabel: Record<MatchResult["scoreLabel"], string> = {
-    "Strong fit": `${referral.candidate_name}'s background lines up well with the ${job.title} role at ${job.company}. ${resumeNote}`,
-    "Partial fit": `${referral.candidate_name} has some relevant experience for the ${job.title} role at ${job.company}, but there are gaps worth exploring in a screen. ${resumeNote}`,
-    "Weak fit": `${referral.candidate_name}'s experience doesn't closely match the ${job.title} role at ${job.company} based on what's available. ${resumeNote}`,
+    "Strong fit": `${referral.candidate_name}'s background lines up well with the ${job.title} role at ${job.company}. ${skillsNote} ${resumeNote}`,
+    "Partial fit": `${referral.candidate_name} has some relevant experience for the ${job.title} role at ${job.company}, but there are gaps worth exploring in a screen. ${skillsNote} ${resumeNote}`,
+    "Weak fit": `${referral.candidate_name}'s experience doesn't closely match the ${job.title} role at ${job.company} based on what's available. ${skillsNote} ${resumeNote}`,
   };
 
   return { summary: summaryByLabel[scoreLabel], scoreLabel };

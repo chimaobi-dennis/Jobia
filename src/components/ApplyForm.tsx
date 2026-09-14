@@ -24,6 +24,12 @@ export default function ApplyForm({
   currentProfile,
   onDone,
 }: ApplyFormProps) {
+  const [name, setName] = useState(referral.candidate_name);
+  const [email, setEmail] = useState(referral.candidate_email);
+  const [location, setLocation] = useState(referral.candidate_location ?? "");
+  const [experience, setExperience] = useState(
+    referral.candidate_experience ?? "",
+  );
   const [summary, setSummary] = useState("");
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
@@ -43,6 +49,10 @@ export default function ApplyForm({
     setParsing(true);
     try {
       const parsed = await mockParseResume(file, job.title);
+      if (parsed.name) setName(parsed.name);
+      if (parsed.email) setEmail(parsed.email);
+      setLocation(parsed.location);
+      setExperience(parsed.experience);
       setSummary(parsed.summary);
     } finally {
       setParsing(false);
@@ -71,6 +81,10 @@ export default function ApplyForm({
         .update({
           candidate_id: currentProfile.id,
           status: "submitted",
+          candidate_name: name,
+          candidate_email: email,
+          candidate_location: location || null,
+          candidate_experience: experience || null,
           summary,
           resume_url: resumeUrl,
         })
@@ -155,6 +169,9 @@ export default function ApplyForm({
           Apply for {job.title}
         </h3>
         <p className="mt-1 text-sm text-slate-500">{job.company}</p>
+        <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">
+          {job.description}
+        </p>
 
         <div className="mt-4 grid gap-4">
           <div>
@@ -175,6 +192,55 @@ export default function ApplyForm({
               </p>
             )}
           </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium text-slate-700">
+                Name
+              </label>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700">
+                Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700">
+                Location
+              </label>
+              <input
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="e.g. San Francisco, CA"
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700">
+                Experience
+              </label>
+              <input
+                value={experience}
+                onChange={(e) => setExperience(e.target.value)}
+                placeholder="e.g. 5 years"
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-slate-700">
               Summary

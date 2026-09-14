@@ -93,6 +93,8 @@ create table if not exists public.referrals (
   candidate_id uuid references public.profiles (id) on delete set null,
   candidate_name text not null,
   candidate_email text not null,
+  candidate_location text,
+  candidate_experience text,
   status text not null default 'invited' check (status in ('invited', 'submitted')),
   summary text,
   resume_url text,
@@ -217,3 +219,12 @@ create policy "Invited candidates can claim and submit their referral"
     and candidate_id = auth.uid()
     and lower(candidate_email) = lower((auth.jwt() ->> 'email'))
   );
+
+-- ---------------------------------------------------------------------
+-- Migration: add candidate_location/candidate_experience to an
+-- already-existing referrals table. Safe to run even on a fresh project.
+-- ---------------------------------------------------------------------
+alter table public.referrals
+  add column if not exists candidate_location text;
+alter table public.referrals
+  add column if not exists candidate_experience text;

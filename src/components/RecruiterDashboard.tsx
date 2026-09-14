@@ -146,6 +146,12 @@ export default function RecruiterDashboard({
                       </div>
                       <p className="text-sm text-slate-500">
                         {referral.candidate_email}
+                        {referral.candidate_location
+                          ? ` · ${referral.candidate_location}`
+                          : ""}
+                        {referral.candidate_experience
+                          ? ` · ${referral.candidate_experience} experience`
+                          : ""}
                       </p>
                       {referral.summary && (
                         <p className="mt-2 text-sm text-slate-600">

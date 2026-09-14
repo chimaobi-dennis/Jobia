@@ -28,6 +28,8 @@ export interface Referral {
   candidate_id: string | null;
   candidate_name: string;
   candidate_email: string;
+  candidate_location: string | null;
+  candidate_experience: string | null;
   status: ReferralStatus;
   summary: string | null;
   resume_url: string | null;
