@@ -88,3 +88,16 @@ npm run dev
 - The invite link flow uses `sessionStorage` (see `src/lib/invite.ts`) to
   carry the pending referral id across the signup redirect, since the
   `?ref=` query param is stripped from the URL as soon as it's read.
+
+## Sample data
+
+Jobia is a prototype. Use made-up names, emails and résumés when trying it
+out; do not load real candidate data into a development project.
+
+## Roadmap
+
+See [`ROADMAP.md`](ROADMAP.md) for planned work.
+
+## License
+
+[MIT](LICENSE) © 2026 Chimaobi Dennis
